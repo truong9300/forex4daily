@@ -1,7 +1,8 @@
 const ALLOWED_MODELS = new Set([
   "openrouter/free",
   "owl-alpha",
-  "nvidia/nemotron-3-8b-instruct",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
   "poolside/laguna-m1",
   "deepseek/deepseek-chat",
   "deepseek/deepseek-r1",
