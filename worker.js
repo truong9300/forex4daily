@@ -1,11 +1,10 @@
 const ALLOWED_MODELS = new Set([
-  "openrouter/free",
-  "owl-alpha",
-  "nvidia/nemotron-3-super-120b-a12b:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "deepseek/deepseek-r1:free",
+  "deepseek/deepseek-chat:free",
+  "google/gemma-3-27b-it:free",
+  "mistralai/mistral-small-3.1-24b-instruct:free",
   "nvidia/nemotron-3-ultra-550b-a55b:free",
-  "poolside/laguna-m1",
-  "deepseek/deepseek-chat",
-  "deepseek/deepseek-r1",
 ]);
 
 function escapeHtml(str) {
@@ -53,12 +52,12 @@ export default {
   <form method="post" action="/chat">
     <label for="model">Model:</label>
     <select name="model" id="model">
-      <option value="openrouter/free">Router Free</option>
-      <option value="owl-alpha">Owl Alpha</option>
-      <option value="nvidia/nemotron-3-8b-instruct">Nemotron Ultra</option>
-      <option value="poolside/laguna-m1">Laguna M.1</option>
-              <option value="deepseek/deepseek-chat">DeepSeek V3</option>
-              <option value="deepseek/deepseek-r1">DeepSeek R1</option>
+      <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B</option>
+      <option value="deepseek/deepseek-r1:free">DeepSeek R1</option>
+      <option value="deepseek/deepseek-chat:free">DeepSeek V3</option>
+      <option value="google/gemma-3-27b-it:free">Gemma 3 27B</option>
+      <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 24B</option>
+      <option value="nvidia/nemotron-3-ultra-550b-a55b:free">Nemotron Ultra 550B</option>
     </select>
     <label for="prompt">Prompt:</label>
     <textarea name="prompt" id="prompt" rows="5" required></textarea>
