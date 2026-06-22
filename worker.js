@@ -3,6 +3,8 @@ const ALLOWED_MODELS = new Set([
   "owl-alpha",
   "nvidia/nemotron-3-8b-instruct",
   "poolside/laguna-m1",
+  "deepseek/deepseek-chat",
+  "deepseek/deepseek-r1",
 ]);
 
 function escapeHtml(str) {
@@ -54,6 +56,8 @@ export default {
       <option value="owl-alpha">Owl Alpha</option>
       <option value="nvidia/nemotron-3-8b-instruct">Nemotron Ultra</option>
       <option value="poolside/laguna-m1">Laguna M.1</option>
+              <option value="deepseek/deepseek-chat">DeepSeek V3</option>
+              <option value="deepseek/deepseek-r1">DeepSeek R1</option>
     </select>
     <label for="prompt">Prompt:</label>
     <textarea name="prompt" id="prompt" rows="5" required></textarea>
