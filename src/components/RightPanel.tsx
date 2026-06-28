@@ -26,6 +26,7 @@ interface RightPanelProps {
   onUpscale: () => void;
   onDenoise: () => void;
   onColorize: () => void;
+  onRestorePhoto: () => void;
 }
 
 const tabs: { id: PanelTab; label: string; icon: string }[] = [
@@ -112,6 +113,7 @@ export function RightPanel(props: RightPanelProps) {
             onUpscale={props.onUpscale}
             onDenoise={props.onDenoise}
             onColorize={props.onColorize}
+            onRestorePhoto={props.onRestorePhoto}
           />
         )}
       </div>

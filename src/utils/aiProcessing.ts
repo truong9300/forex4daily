@@ -139,6 +139,7 @@ function removeBackgroundSmart(canvas: HTMLCanvasElement): HTMLCanvasElement {
 }
 
 // Real Auto Enhance: histogram-based analysis
+
 export function autoEnhanceAI(canvas: HTMLCanvasElement): {
   brightness: number;
   contrast: number;
@@ -394,4 +395,119 @@ export function colorizeAI(canvas: HTMLCanvasElement): HTMLCanvasElement {
 
   ctx.putImageData(imageData, 0, 0);
   return out;
+}
+
+// ── Old Photo Restoration via HuggingFace Transformers.js ──────────────────
+
+let srPipeline: any = null;
+let srPipelineLoading = false;
+
+async function getSRPipeline(onProgress?: (msg: string) => void) {
+  if (srPipeline) return srPipeline;
+  if (srPipelineLoading) {
+    while (srPipelineLoading) await new Promise(r => setTimeout(r, 100));
+    return srPipeline;
+  }
+  srPipelineLoading = true;
+  try {
+    const { pipeline, env } = await import('@huggingface/transformers');
+    env.allowLocalModels = false;
+    onProgress?.('Downloading model lần đầu (~100MB, chỉ cần 1 lần)...');
+    srPipeline = await (pipeline as any)('image-super-resolution', 'Xenova/swin2SR-classical-sr-x2-64', {
+      progress_callback: (info: any) => {
+        if (info.status === 'progress' && info.progress != null) {
+          onProgress?.(`Tải model: ${Math.round(info.progress)}%`);
+        }
+      },
+    });
+  } catch (e) {
+    console.error('Failed to load Swin2SR model:', e);
+    srPipeline = null;
+  } finally {
+    srPipelineLoading = false;
+  }
+  return srPipeline;
+}
+
+function rawImageToCanvas(raw: any): HTMLCanvasElement {
+  const out = document.createElement('canvas');
+  out.width = raw.width;
+  out.height = raw.height;
+  const ctx = out.getContext('2d')!;
+  const imgData = ctx.createImageData(raw.width, raw.height);
+  const src: Uint8Array | Float32Array = raw.data;
+  const ch: number = raw.channels ?? 3;
+  for (let i = 0; i < raw.width * raw.height; i++) {
+    imgData.data[i * 4 + 0] = ch >= 1 ? src[i * ch + 0] : 0;
+    imgData.data[i * 4 + 1] = ch >= 2 ? src[i * ch + 1] : 0;
+    imgData.data[i * 4 + 2] = ch >= 3 ? src[i * ch + 2] : 0;
+    imgData.data[i * 4 + 3] = ch === 4 ? src[i * ch + 3] : 255;
+  }
+  ctx.putImageData(imgData, 0, 0);
+  return out;
+}
+
+function restorePhotoSmart(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  let result = denoiseAI(canvas, 0.65);
+
+  const ctx = result.getContext('2d')!;
+  const imgData = ctx.getImageData(0, 0, result.width, result.height);
+  const d = imgData.data;
+
+  const histL = new Uint32Array(256);
+  for (let i = 0; i < d.length; i += 4) {
+    histL[Math.round(0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2])]++;
+  }
+  const total = d.length / 4;
+  const p2 = findPercentile(histL, total, 0.02);
+  const p98 = findPercentile(histL, total, 0.98);
+  const range = Math.max(1, p98 - p2);
+
+  for (let i = 0; i < d.length; i += 4) {
+    for (let c = 0; c < 3; c++) {
+      d[i + c] = Math.min(255, Math.max(0, Math.round((d[i + c] - p2) / range * 255)));
+    }
+    d[i + 0] = Math.min(255, d[i + 0] + 8);
+    d[i + 2] = Math.max(0, d[i + 2] - 6);
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  const blurred = denoiseAI(result, 0.2);
+  const sharpCtx = result.getContext('2d')!;
+  const orig = sharpCtx.getImageData(0, 0, result.width, result.height);
+  const blurData = blurred.getContext('2d')!.getImageData(0, 0, result.width, result.height);
+  for (let i = 0; i < orig.data.length; i += 4) {
+    for (let c = 0; c < 3; c++) {
+      orig.data[i + c] = Math.min(255, Math.max(0,
+        orig.data[i + c] + Math.round((orig.data[i + c] - blurData.data[i + c]) * 0.6)
+      ));
+    }
+  }
+  sharpCtx.putImageData(orig, 0, 0);
+  return result;
+}
+
+export async function restorePhotoAI(
+  canvas: HTMLCanvasElement,
+  onProgress?: (msg: string) => void
+): Promise<HTMLCanvasElement> {
+  onProgress?.('Loading restoration model...');
+  try {
+    const pipe = await getSRPipeline(onProgress);
+    if (pipe) {
+      onProgress?.('AI đang phân tích và phục hồi ảnh...');
+      const { RawImage } = await import('@huggingface/transformers');
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png');
+      });
+      const rawImage = await (RawImage as any).fromBlob(blob);
+      const result = await pipe(rawImage);
+      onProgress?.('Hoàn tất phục hồi AI...');
+      return typeof result.toCanvas === 'function' ? result.toCanvas() : rawImageToCanvas(result);
+    }
+  } catch (e) {
+    console.error('AI restoration failed, using smart fallback:', e);
+  }
+  onProgress?.('Đang phục hồi thông minh (không cần model)...');
+  return restorePhotoSmart(canvas);
 }

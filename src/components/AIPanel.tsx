@@ -9,6 +9,7 @@ interface AIPanelProps {
   onUpscale: () => void;
   onDenoise: () => void;
   onColorize: () => void;
+  onRestorePhoto: () => void;
 }
 
 interface AIFeature {
@@ -29,6 +30,7 @@ export function AIPanel({
   onUpscale,
   onDenoise,
   onColorize,
+  onRestorePhoto,
 }: AIPanelProps) {
   const [activeFeature, setActiveFeature] = useState<string | null>(null);
 
@@ -72,6 +74,14 @@ export function AIPanel({
       icon: '🎨',
       action: onColorize,
       badge: 'Smart',
+    },
+    {
+      id: 'restore-photo',
+      name: 'Phục Hồi Ảnh Cũ',
+      description: 'Swin2SR (HuggingFace) — xóa noise, phục hồi chi tiết',
+      icon: '🕰️',
+      action: onRestorePhoto,
+      badge: 'AI',
     },
   ];
 
@@ -169,6 +179,7 @@ export function AIPanel({
           📊 <b style={{ color: '#9090b0' }}>Histogram</b> — Phân tích thống kê ảnh<br />
           🔬 <b style={{ color: '#9090b0' }}>Bilateral</b> — Edge-preserving filter<br />
           🔷 <b style={{ color: '#9090b0' }}>Bicubic</b> — Nội suy chất lượng cao<br />
+          🕰️ <b style={{ color: '#9090b0' }}>Swin2SR</b> — HuggingFace, phục hồi ảnh cũ<br />
           <br />
           <span style={{ color: '#4a4a6a' }}>Xử lý 100% local — không upload ảnh.</span>
         </div>

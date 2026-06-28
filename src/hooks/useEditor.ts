@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import type { EditorState, Adjustments, Tool, Layer } from '../types/editor';
 import { imageToCanvas, applyAdjustments, applyFilter, applySharpness } from '../utils/imageProcessing';
-import { removeBackgroundAI, autoEnhanceAI, denoiseAI, upscaleAI, colorizeAI } from '../utils/aiProcessing';
+import { removeBackgroundAI, autoEnhanceAI, denoiseAI, upscaleAI, colorizeAI, restorePhotoAI } from '../utils/aiProcessing';
 
 const defaultAdjustments: Adjustments = {
   brightness: 0,
@@ -269,6 +269,27 @@ export function useEditor() {
     }
   }, [state.layers, state.activeLayerId]);
 
+  const restorePhoto_ = useCallback(async () => {
+    const activeLayer = state.layers.find(l => l.id === state.activeLayerId);
+    if (!activeLayer) return;
+    setState(prev => ({ ...prev, isProcessing: true, processingMessage: 'Đang khởi động model...' }));
+    try {
+      const result = await restorePhotoAI(activeLayer.canvas, (msg) => {
+        setState(prev => ({ ...prev, processingMessage: msg }));
+      });
+      setState(prev => ({
+        ...prev,
+        isProcessing: false,
+        processingMessage: '',
+        layers: prev.layers.map(l =>
+          l.id === prev.activeLayerId ? { ...l, canvas: result } : l
+        ),
+      }));
+    } catch {
+      setState(prev => ({ ...prev, isProcessing: false, processingMessage: '' }));
+    }
+  }, [state.layers, state.activeLayerId]);
+
   const getComposedCanvas = useCallback((): HTMLCanvasElement | null => {
     if (!state.layers.length) return null;
     const base = state.layers[0];
@@ -335,6 +356,7 @@ export function useEditor() {
     denoise: denoise_,
     upscale: upscale_,
     colorize: colorize_,
+    restorePhoto: restorePhoto_,
     commitDraw: commitDraw_,
     getRenderedCanvas,
     getComposedCanvas,

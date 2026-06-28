@@ -27,6 +27,7 @@ function App() {
     denoise,
     upscale,
     colorize,
+    restorePhoto,
     commitDraw,
     getRenderedCanvas,
     getComposedCanvas,
@@ -153,6 +154,10 @@ function App() {
     colorize();
   };
 
+  const handleRestorePhoto = async () => {
+    await restorePhoto();
+  };
+
   const renderedCanvas = getRenderedCanvas();
   const composedCanvas = getComposedCanvas();
   const showBrushOptions = state.activeTool === 'brush' || state.activeTool === 'eraser';
@@ -233,6 +238,7 @@ function App() {
           onUpscale={handleUpscale}
           onDenoise={handleDenoise}
           onColorize={handleColorize}
+          onRestorePhoto={handleRestorePhoto}
         />
       </div>
 
