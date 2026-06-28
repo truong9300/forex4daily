@@ -36,41 +36,42 @@ export function AIPanel({
     {
       id: 'remove-bg',
       name: 'Remove Background',
-      description: 'AI-powered background removal',
+      description: 'MediaPipe Selfie Segmentation (TF.js)',
       icon: '✂️',
       action: onRemoveBackground,
-      badge: 'AI',
+      badge: 'TF.js',
     },
     {
       id: 'auto-enhance',
       name: 'Auto Enhance',
-      description: 'Automatically improve photo quality',
+      description: 'Histogram analysis — tối ưu tự động',
       icon: '✨',
       action: onAutoEnhance,
-      badge: 'AI',
+      badge: 'Smart',
     },
     {
       id: 'upscale',
-      name: 'AI Upscale',
-      description: 'Increase resolution with AI',
+      name: 'AI Upscale 2×',
+      description: 'Bicubic interpolation — nét hơn bilinear',
       icon: '⬆️',
       action: onUpscale,
-      badge: 'AI',
+      badge: 'Bicubic',
     },
     {
       id: 'denoise',
       name: 'Denoise',
-      description: 'Remove noise and grain',
+      description: 'Bilateral filter — giữ cạnh, xóa nhiễu',
       icon: '🔇',
       action: onDenoise,
+      badge: 'Filter',
     },
     {
       id: 'colorize',
       name: 'Colorize',
-      description: 'Add color to B&W photos',
+      description: 'Smart tone mapping cho ảnh B&W',
       icon: '🎨',
       action: onColorize,
-      badge: 'AI',
+      badge: 'Smart',
     },
   ];
 
@@ -162,9 +163,14 @@ export function AIPanel({
       ))}
 
       <div style={{ margin: '16px 12px 8px', padding: '12px', background: '#1e1e2e', borderRadius: 8, border: '1px solid #3a3a5c' }}>
-        <div style={{ color: '#6c63ff', fontSize: 11, fontWeight: 600, marginBottom: 6 }}>✦ AI Features</div>
-        <div style={{ color: '#606080', fontSize: 11, lineHeight: 1.6 }}>
-          Powered by browser-based AI models. Processing happens locally on your device — no data is uploaded.
+        <div style={{ color: '#6c63ff', fontSize: 11, fontWeight: 600, marginBottom: 6 }}>✦ Công nghệ sử dụng</div>
+        <div style={{ color: '#606080', fontSize: 11, lineHeight: 1.8 }}>
+          🧠 <b style={{ color: '#9090b0' }}>TF.js</b> — MediaPipe model chạy trong browser<br />
+          📊 <b style={{ color: '#9090b0' }}>Histogram</b> — Phân tích thống kê ảnh<br />
+          🔬 <b style={{ color: '#9090b0' }}>Bilateral</b> — Edge-preserving filter<br />
+          🔷 <b style={{ color: '#9090b0' }}>Bicubic</b> — Nội suy chất lượng cao<br />
+          <br />
+          <span style={{ color: '#4a4a6a' }}>Xử lý 100% local — không upload ảnh.</span>
         </div>
       </div>
     </div>

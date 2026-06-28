@@ -23,6 +23,10 @@ function App() {
     toggleLayerVisibility,
     setActiveLayer,
     removeBackground,
+    autoEnhance,
+    denoise,
+    upscale,
+    colorize,
     getRenderedCanvas,
     getComposedCanvas,
   } = useEditor();
@@ -133,36 +137,19 @@ function App() {
   };
 
   const handleAutoEnhance = () => {
-    setAdjustment('brightness', 10);
-    setAdjustment('contrast', 15);
-    setAdjustment('saturation', 20);
-    setAdjustment('vibrance', 30);
-    setAdjustment('sharpness', 20);
+    autoEnhance();
   };
 
-  const handleUpscale = () => {
-    const layer = state.layers.find(l => l.id === state.activeLayerId);
-    if (!layer) return;
-    const factor = 2;
-    const out = document.createElement('canvas');
-    out.width = layer.canvas.width * factor;
-    out.height = layer.canvas.height * factor;
-    const ctx = out.getContext('2d')!;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(layer.canvas, 0, 0, out.width, out.height);
-    layer.canvas.width = out.width;
-    layer.canvas.height = out.height;
-    layer.canvas.getContext('2d')!.drawImage(out, 0, 0);
+  const handleUpscale = async () => {
+    await upscale();
   };
 
-  const handleDenoise = () => {
-    setAdjustment('noiseReduction', 50);
+  const handleDenoise = async () => {
+    await denoise();
   };
 
   const handleColorize = () => {
-    setAdjustment('saturation', 60);
-    setAdjustment('vibrance', 50);
+    colorize();
   };
 
   const renderedCanvas = getRenderedCanvas();

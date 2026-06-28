@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import type { EditorState, Adjustments, Tool, Layer } from '../types/editor';
-import { imageToCanvas, applyAdjustments, applyFilter, applySharpness, removeBackground } from '../utils/imageProcessing';
+import { imageToCanvas, applyAdjustments, applyFilter, applySharpness } from '../utils/imageProcessing';
+import { removeBackgroundAI, autoEnhanceAI, denoiseAI, upscaleAI, colorizeAI } from '../utils/aiProcessing';
 
 const defaultAdjustments: Adjustments = {
   brightness: 0,
@@ -153,18 +154,109 @@ export function useEditor() {
   const removeBackground_ = useCallback(async () => {
     const activeLayer = state.layers.find(l => l.id === state.activeLayerId);
     if (!activeLayer) return;
-    setState(prev => ({ ...prev, isProcessing: true, processingMessage: 'Removing background...' }));
+    setState(prev => ({ ...prev, isProcessing: true, processingMessage: 'Loading AI model...' }));
     try {
-      const result = await removeBackground(activeLayer.canvas);
+      const result = await removeBackgroundAI(activeLayer.canvas, (msg) => {
+        setState(prev => ({ ...prev, processingMessage: msg }));
+      });
       setState(prev => ({
         ...prev,
         isProcessing: false,
+        processingMessage: '',
         layers: prev.layers.map(l =>
           l.id === prev.activeLayerId ? { ...l, canvas: result } : l
         ),
       }));
     } catch {
-      setState(prev => ({ ...prev, isProcessing: false }));
+      setState(prev => ({ ...prev, isProcessing: false, processingMessage: '' }));
+    }
+  }, [state.layers, state.activeLayerId]);
+
+  const autoEnhance_ = useCallback(() => {
+    const composed = (() => {
+      if (!state.layers.length) return null;
+      const base = state.layers[0];
+      const c = document.createElement('canvas');
+      c.width = base.canvas.width;
+      c.height = base.canvas.height;
+      const ctx = c.getContext('2d')!;
+      for (const layer of state.layers) {
+        if (!layer.visible) continue;
+        ctx.drawImage(layer.canvas, 0, 0);
+      }
+      return c;
+    })();
+    if (!composed) return;
+    const suggested = autoEnhanceAI(composed);
+    setState(prev => ({
+      ...prev,
+      adjustments: {
+        ...prev.adjustments,
+        brightness: suggested.brightness,
+        contrast: suggested.contrast,
+        saturation: suggested.saturation,
+        vibrance: suggested.vibrance,
+        sharpness: suggested.sharpness,
+        highlights: suggested.highlights,
+        shadows: suggested.shadows,
+      },
+    }));
+  }, [state.layers]);
+
+  const denoise_ = useCallback(async () => {
+    const activeLayer = state.layers.find(l => l.id === state.activeLayerId);
+    if (!activeLayer) return;
+    setState(prev => ({ ...prev, isProcessing: true, processingMessage: 'Applying bilateral filter...' }));
+    try {
+      const result = denoiseAI(activeLayer.canvas, 0.5);
+      setState(prev => ({
+        ...prev,
+        isProcessing: false,
+        processingMessage: '',
+        layers: prev.layers.map(l =>
+          l.id === prev.activeLayerId ? { ...l, canvas: result } : l
+        ),
+      }));
+    } catch {
+      setState(prev => ({ ...prev, isProcessing: false, processingMessage: '' }));
+    }
+  }, [state.layers, state.activeLayerId]);
+
+  const upscale_ = useCallback(async () => {
+    const activeLayer = state.layers.find(l => l.id === state.activeLayerId);
+    if (!activeLayer) return;
+    setState(prev => ({ ...prev, isProcessing: true, processingMessage: 'Upscaling with bicubic interpolation...' }));
+    try {
+      const result = upscaleAI(activeLayer.canvas, 2);
+      setState(prev => ({
+        ...prev,
+        isProcessing: false,
+        processingMessage: '',
+        layers: prev.layers.map(l =>
+          l.id === prev.activeLayerId ? { ...l, canvas: result } : l
+        ),
+      }));
+    } catch {
+      setState(prev => ({ ...prev, isProcessing: false, processingMessage: '' }));
+    }
+  }, [state.layers, state.activeLayerId]);
+
+  const colorize_ = useCallback(() => {
+    const activeLayer = state.layers.find(l => l.id === state.activeLayerId);
+    if (!activeLayer) return;
+    setState(prev => ({ ...prev, isProcessing: true, processingMessage: 'Colorizing...' }));
+    try {
+      const result = colorizeAI(activeLayer.canvas);
+      setState(prev => ({
+        ...prev,
+        isProcessing: false,
+        processingMessage: '',
+        layers: prev.layers.map(l =>
+          l.id === prev.activeLayerId ? { ...l, canvas: result } : l
+        ),
+      }));
+    } catch {
+      setState(prev => ({ ...prev, isProcessing: false, processingMessage: '' }));
     }
   }, [state.layers, state.activeLayerId]);
 
@@ -230,6 +322,10 @@ export function useEditor() {
     setActiveLayer,
     addTextLayer,
     removeBackground: removeBackground_,
+    autoEnhance: autoEnhance_,
+    denoise: denoise_,
+    upscale: upscale_,
+    colorize: colorize_,
     getRenderedCanvas,
     getComposedCanvas,
   };
