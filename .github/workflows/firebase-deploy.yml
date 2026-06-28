@@ -31,8 +31,18 @@ jobs:
           FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           echo "$FIREBASE_SA_JSON" > /tmp/sa.json
-          GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json npx firebase-tools deploy \
+          DEPLOY_OUT=$(GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json npx firebase-tools deploy \
             --only hosting \
             --project chatbot-kbnn \
-            --non-interactive
+            --non-interactive 2>&1) && EXIT_CODE=0 || EXIT_CODE=$?
           rm -f /tmp/sa.json
+          echo "$DEPLOY_OUT"
+          # Treat "current active version" as success — content already live
+          if [ $EXIT_CODE -ne 0 ]; then
+            if echo "$DEPLOY_OUT" | grep -q "current active version"; then
+              echo "✔ Version already deployed and live — no changes needed."
+            else
+              echo "Deploy failed with unexpected error."
+              exit 1
+            fi
+          fi
