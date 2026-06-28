@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Environment variables (secrets - never commit)
+.env
+
+# Facebook scraper output
+facebook-posts.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
