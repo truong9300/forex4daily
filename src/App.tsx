@@ -27,6 +27,7 @@ function App() {
     denoise,
     upscale,
     colorize,
+    commitDraw,
     getRenderedCanvas,
     getComposedCanvas,
   } = useEditor();
@@ -209,6 +210,7 @@ function App() {
           brushOpacity={state.brushOpacity}
           onZoomChange={setZoom}
           onPanChange={setPan}
+          onDrawCommit={commitDraw}
         />
 
         {/* Right panel */}

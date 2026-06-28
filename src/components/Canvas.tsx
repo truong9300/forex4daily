@@ -13,12 +13,13 @@ interface CanvasProps {
   brushOpacity: number;
   onZoomChange: (zoom: number) => void;
   onPanChange: (x: number, y: number) => void;
-  onDraw?: (canvas: HTMLCanvasElement) => void;
+  onDrawCommit?: (canvas: HTMLCanvasElement) => void;
   onCropComplete?: (x: number, y: number, w: number, h: number) => void;
 }
 
 export function Canvas({
   renderedCanvas,
+  baseCanvas,
   zoom,
   panX,
   panY,
@@ -28,12 +29,11 @@ export function Canvas({
   brushOpacity,
   onZoomChange,
   onPanChange,
-  onDraw,
+  onDrawCommit,
   onCropComplete,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
-  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const drawingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const isPainting = useRef(false);
   const isPanning = useRef(false);
@@ -42,8 +42,12 @@ export function Canvas({
   const [cropRect, setCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [isCropping, setIsCropping] = useState(false);
 
-  // Render the canvas to display
-  useEffect(() => {
+  // brushOverlay: transparent canvas with strokes only (drawn on top of renderedCanvas)
+  // replaceImage: full replacement canvas (for eraser preview)
+  const renderDisplay = useCallback((opts?: {
+    brushOverlay?: HTMLCanvasElement | null;
+    replaceImage?: HTMLCanvasElement | null;
+  }) => {
     const displayCanvas = displayCanvasRef.current;
     const container = containerRef.current;
     if (!displayCanvas || !container) return;
@@ -51,8 +55,8 @@ export function Canvas({
     const ctx = displayCanvas.getContext('2d')!;
     const cw = container.clientWidth;
     const ch = container.clientHeight;
-    displayCanvas.width = cw;
-    displayCanvas.height = ch;
+    if (displayCanvas.width !== cw) displayCanvas.width = cw;
+    if (displayCanvas.height !== ch) displayCanvas.height = ch;
 
     ctx.clearRect(0, 0, cw, ch);
 
@@ -66,17 +70,22 @@ export function Canvas({
       }
     }
 
-    if (!renderedCanvas) return;
+    const mainSrc = opts?.replaceImage || renderedCanvas;
+    if (!mainSrc) return;
 
-    const imgW = renderedCanvas.width * zoom;
-    const imgH = renderedCanvas.height * zoom;
+    const imgW = mainSrc.width * zoom;
+    const imgH = mainSrc.height * zoom;
     const drawX = cw / 2 - imgW / 2 + panX;
     const drawY = ch / 2 - imgH / 2 + panY;
 
     ctx.imageSmoothingEnabled = zoom < 1;
-    ctx.drawImage(renderedCanvas, drawX, drawY, imgW, imgH);
+    ctx.drawImage(mainSrc, drawX, drawY, imgW, imgH);
 
-    // Draw crop overlay
+    if (opts?.brushOverlay) {
+      ctx.drawImage(opts.brushOverlay, drawX, drawY, imgW, imgH);
+    }
+
+    // Crop overlay
     if (cropRect && activeTool === 'crop') {
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(0, 0, cw, drawY + cropRect.y * zoom);
@@ -99,6 +108,10 @@ export function Canvas({
     }
   }, [renderedCanvas, zoom, panX, panY, cropRect, activeTool]);
 
+  useEffect(() => {
+    renderDisplay();
+  }, [renderDisplay]);
+
   const getImageCoords = useCallback((e: React.MouseEvent | MouseEvent): { x: number; y: number } => {
     const container = containerRef.current;
     const canvas = renderedCanvas;
@@ -117,6 +130,34 @@ export function Canvas({
       y: (cy - drawY) / zoom,
     };
   }, [renderedCanvas, zoom, panX, panY]);
+
+  const paintDot = (dc: HTMLCanvasElement, pos: { x: number; y: number }, tool: Tool) => {
+    const ctx = dc.getContext('2d')!;
+    ctx.globalAlpha = brushOpacity / 100;
+    ctx.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, brushSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = brushColor;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  };
+
+  const paintLine = (dc: HTMLCanvasElement, from: { x: number; y: number }, to: { x: number; y: number }, tool: Tool) => {
+    const ctx = dc.getContext('2d')!;
+    ctx.globalAlpha = brushOpacity / 100;
+    ctx.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.strokeStyle = brushColor;
+    ctx.lineWidth = brushSize;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  };
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (!renderedCanvas) return;
@@ -143,25 +184,29 @@ export function Canvas({
     if (activeTool === 'brush' || activeTool === 'eraser') {
       isPainting.current = true;
       lastPos.current = pos;
+
       if (!drawingCanvasRef.current) {
+        const src = baseCanvas || renderedCanvas;
         const dc = document.createElement('canvas');
-        dc.width = renderedCanvas.width;
-        dc.height = renderedCanvas.height;
-        const dctx = dc.getContext('2d')!;
-        dctx.drawImage(renderedCanvas, 0, 0);
+        dc.width = src.width;
+        dc.height = src.height;
+        if (activeTool === 'eraser') {
+          // Eraser needs the base pixels to remove
+          dc.getContext('2d')!.drawImage(src, 0, 0);
+        }
         drawingCanvasRef.current = dc;
       }
-      const dc = drawingCanvasRef.current;
-      const ctx = dc.getContext('2d')!;
-      ctx.globalAlpha = brushOpacity / 100;
-      ctx.globalCompositeOperation = activeTool === 'eraser' ? 'destination-out' : 'source-over';
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, brushSize / 2, 0, Math.PI * 2);
-      ctx.fillStyle = brushColor;
-      ctx.fill();
-      onDraw?.(dc);
+
+      paintDot(drawingCanvasRef.current, pos, activeTool);
+
+      if (activeTool === 'brush') {
+        renderDisplay({ brushOverlay: drawingCanvasRef.current });
+      } else {
+        renderDisplay({ replaceImage: drawingCanvasRef.current });
+      }
     }
-  }, [activeTool, renderedCanvas, getImageCoords, zoom, onZoomChange, brushSize, brushColor, brushOpacity, onDraw]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool, renderedCanvas, baseCanvas, getImageCoords, zoom, onZoomChange, brushSize, brushColor, brushOpacity, renderDisplay]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (isPanning.current) {
@@ -184,22 +229,17 @@ export function Canvas({
     }
 
     if (isPainting.current && drawingCanvasRef.current && (activeTool === 'brush' || activeTool === 'eraser')) {
-      const dc = drawingCanvasRef.current;
-      const ctx = dc.getContext('2d')!;
-      ctx.globalAlpha = brushOpacity / 100;
-      ctx.globalCompositeOperation = activeTool === 'eraser' ? 'destination-out' : 'source-over';
-      ctx.beginPath();
-      ctx.moveTo(lastPos.current.x, lastPos.current.y);
-      ctx.lineTo(pos.x, pos.y);
-      ctx.strokeStyle = brushColor;
-      ctx.lineWidth = brushSize;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.stroke();
+      paintLine(drawingCanvasRef.current, lastPos.current, pos, activeTool);
       lastPos.current = pos;
-      onDraw?.(dc);
+
+      if (activeTool === 'brush') {
+        renderDisplay({ brushOverlay: drawingCanvasRef.current });
+      } else {
+        renderDisplay({ replaceImage: drawingCanvasRef.current });
+      }
     }
-  }, [activeTool, isCropping, panX, panY, getImageCoords, onPanChange, brushSize, brushColor, brushOpacity, onDraw]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool, isCropping, panX, panY, getImageCoords, onPanChange, brushSize, brushColor, brushOpacity, renderDisplay]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
     isPanning.current = false;
@@ -216,11 +256,29 @@ export function Canvas({
       }
     }
 
-    if (isPainting.current) {
+    if (isPainting.current && drawingCanvasRef.current) {
       isPainting.current = false;
+      const dc = drawingCanvasRef.current;
+      drawingCanvasRef.current = null;
+
+      // For brush: merge strokes onto base canvas and commit
+      // For eraser: dc already contains the erased result
+      if (activeTool === 'brush' && (baseCanvas || renderedCanvas)) {
+        const src = baseCanvas || renderedCanvas!;
+        const merged = document.createElement('canvas');
+        merged.width = src.width;
+        merged.height = src.height;
+        const ctx = merged.getContext('2d')!;
+        ctx.drawImage(src, 0, 0);
+        ctx.drawImage(dc, 0, 0);
+        onDrawCommit?.(merged);
+      } else {
+        onDrawCommit?.(dc);
+      }
     }
-    e;
-  }, [activeTool, isCropping, cropRect, onCropComplete]);
+
+    void e;
+  }, [activeTool, isCropping, cropRect, onCropComplete, baseCanvas, renderedCanvas, onDrawCommit]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -257,7 +315,6 @@ export function Canvas({
       onContextMenu={e => e.preventDefault()}
     >
       <canvas ref={displayCanvasRef} style={{ position: 'absolute', top: 0, left: 0 }} />
-      <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }} />
 
       {!renderedCanvas && (
         <div style={{
@@ -276,7 +333,6 @@ export function Canvas({
         </div>
       )}
 
-      {/* Zoom indicator */}
       {renderedCanvas && (
         <div style={{
           position: 'absolute',

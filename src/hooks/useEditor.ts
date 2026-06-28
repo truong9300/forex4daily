@@ -241,6 +241,15 @@ export function useEditor() {
     }
   }, [state.layers, state.activeLayerId]);
 
+  const commitDraw_ = useCallback((canvas: HTMLCanvasElement) => {
+    setState(prev => ({
+      ...prev,
+      layers: prev.layers.map(l =>
+        l.id === prev.activeLayerId ? { ...l, canvas } : l
+      ),
+    }));
+  }, []);
+
   const colorize_ = useCallback(() => {
     const activeLayer = state.layers.find(l => l.id === state.activeLayerId);
     if (!activeLayer) return;
@@ -326,6 +335,7 @@ export function useEditor() {
     denoise: denoise_,
     upscale: upscale_,
     colorize: colorize_,
+    commitDraw: commitDraw_,
     getRenderedCanvas,
     getComposedCanvas,
   };
