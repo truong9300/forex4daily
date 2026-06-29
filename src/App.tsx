@@ -28,6 +28,7 @@ function App() {
     upscale,
     colorize,
     restorePhoto,
+    faceSwap,
     commitDraw,
     getRenderedCanvas,
     getComposedCanvas,
@@ -158,6 +159,10 @@ function App() {
     await restorePhoto();
   };
 
+  const handleFaceSwap = async (sourceFile: File) => {
+    await faceSwap(sourceFile);
+  };
+
   const renderedCanvas = getRenderedCanvas();
   const composedCanvas = getComposedCanvas();
   const showBrushOptions = state.activeTool === 'brush' || state.activeTool === 'eraser';
@@ -239,6 +244,7 @@ function App() {
           onDenoise={handleDenoise}
           onColorize={handleColorize}
           onRestorePhoto={handleRestorePhoto}
+          onFaceSwap={handleFaceSwap}
         />
       </div>
 

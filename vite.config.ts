@@ -5,11 +5,11 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    exclude: ['@mediapipe/selfie_segmentation'],
+    exclude: ['@mediapipe/selfie_segmentation', '@mediapipe/face_mesh'],
   },
   build: {
     rollupOptions: {
-      external: ['@mediapipe/selfie_segmentation'],
+      external: ['@mediapipe/selfie_segmentation', '@mediapipe/face_mesh'],
     },
   },
 })

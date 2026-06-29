@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 interface AIPanelProps {
   hasImage: boolean;
@@ -10,6 +10,7 @@ interface AIPanelProps {
   onDenoise: () => void;
   onColorize: () => void;
   onRestorePhoto: () => void;
+  onFaceSwap: (sourceFile: File) => void;
 }
 
 interface AIFeature {
@@ -19,6 +20,7 @@ interface AIFeature {
   icon: string;
   action: () => void;
   badge?: string;
+  needsSource?: boolean;
 }
 
 export function AIPanel({
@@ -31,8 +33,20 @@ export function AIPanel({
   onDenoise,
   onColorize,
   onRestorePhoto,
+  onFaceSwap,
 }: AIPanelProps) {
   const [activeFeature, setActiveFeature] = useState<string | null>(null);
+  const [showFaceSwapPicker, setShowFaceSwapPicker] = useState(false);
+  const faceSourceRef = useRef<HTMLInputElement>(null);
+
+  const handleFaceSourceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setShowFaceSwapPicker(false);
+      onFaceSwap(file);
+    }
+    e.target.value = '';
+  };
 
   const features: AIFeature[] = [
     {
@@ -42,6 +56,15 @@ export function AIPanel({
       icon: '✂️',
       action: onRemoveBackground,
       badge: 'TF.js',
+    },
+    {
+      id: 'face-swap',
+      name: 'Face Swap',
+      description: 'Ghép khuôn mặt từ ảnh khác (MediaPipe FaceMesh)',
+      icon: '🔄',
+      action: () => setShowFaceSwapPicker(true),
+      badge: 'AI',
+      needsSource: true,
     },
     {
       id: 'auto-enhance',
@@ -87,6 +110,10 @@ export function AIPanel({
 
   const handleFeatureClick = (feature: AIFeature) => {
     if (!hasImage || isProcessing) return;
+    if (feature.needsSource) {
+      feature.action();
+      return;
+    }
     setActiveFeature(feature.id);
     feature.action();
     setTimeout(() => setActiveFeature(null), 2000);
@@ -119,6 +146,62 @@ export function AIPanel({
       )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      {/* Face Swap source picker */}
+      {showFaceSwapPicker && (
+        <div style={{
+          margin: '0 12px 12px',
+          padding: '14px',
+          background: 'rgba(108,99,255,0.08)',
+          border: '1px solid rgba(108,99,255,0.4)',
+          borderRadius: 10,
+        }}>
+          <div style={{ color: '#e0e0f0', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+            🔄 Chọn ảnh nguồn (source face)
+          </div>
+          <div style={{ color: '#9090b0', fontSize: 11, marginBottom: 10, lineHeight: 1.6 }}>
+            Ảnh có khuôn mặt muốn ghép vào. Mặt thẳng, rõ nét → kết quả tốt nhất.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => faceSourceRef.current?.click()}
+              style={{
+                flex: 1,
+                padding: '8px',
+                background: 'linear-gradient(135deg, #6c63ff, #a855f7)',
+                color: '#fff',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Chọn ảnh nguồn
+            </button>
+            <button
+              onClick={() => setShowFaceSwapPicker(false)}
+              style={{
+                padding: '8px 12px',
+                background: 'rgba(255,255,255,0.05)',
+                color: '#9090b0',
+                borderRadius: 6,
+                fontSize: 12,
+                cursor: 'pointer',
+                border: '1px solid #3a3a5c',
+              }}
+            >
+              Hủy
+            </button>
+          </div>
+          <input
+            ref={faceSourceRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFaceSourceChange}
+            style={{ display: 'none' }}
+          />
+        </div>
+      )}
 
       {features.map(feature => (
         <div
@@ -176,6 +259,7 @@ export function AIPanel({
         <div style={{ color: '#6c63ff', fontSize: 11, fontWeight: 600, marginBottom: 6 }}>✦ Công nghệ sử dụng</div>
         <div style={{ color: '#606080', fontSize: 11, lineHeight: 1.8 }}>
           🧠 <b style={{ color: '#9090b0' }}>TF.js</b> — MediaPipe model chạy trong browser<br />
+          🔄 <b style={{ color: '#9090b0' }}>FaceMesh</b> — 468 điểm landmark, affine warp<br />
           📊 <b style={{ color: '#9090b0' }}>Histogram</b> — Phân tích thống kê ảnh<br />
           🔬 <b style={{ color: '#9090b0' }}>Bilateral</b> — Edge-preserving filter<br />
           🔷 <b style={{ color: '#9090b0' }}>Bicubic</b> — Nội suy chất lượng cao<br />

@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import type { EditorState, Adjustments, Tool, Layer } from '../types/editor';
 import { imageToCanvas, applyAdjustments, applyFilter, applySharpness } from '../utils/imageProcessing';
 import { removeBackgroundAI, autoEnhanceAI, denoiseAI, upscaleAI, colorizeAI, restorePhotoAI } from '../utils/aiProcessing';
+import { faceSwapAI } from '../utils/faceSwapProcessing';
 
 const defaultAdjustments: Adjustments = {
   brightness: 0,
@@ -40,6 +41,23 @@ const initialState: EditorState = {
   isProcessing: false,
   processingMessage: '',
 };
+
+function fileToCanvas(file: File): Promise<HTMLCanvasElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      c.getContext('2d')!.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      resolve(c);
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
 
 export function useEditor() {
   const [state, setState] = useState<EditorState>(initialState);
@@ -269,6 +287,30 @@ export function useEditor() {
     }
   }, [state.layers, state.activeLayerId]);
 
+  const faceSwap_ = useCallback(async (sourceFile: File) => {
+    const activeLayer = state.layers.find(l => l.id === state.activeLayerId);
+    if (!activeLayer) return;
+    setState(prev => ({ ...prev, isProcessing: true, processingMessage: 'Đang chuẩn bị...' }));
+    try {
+      const sourceCanvas = await fileToCanvas(sourceFile);
+      const result = await faceSwapAI(activeLayer.canvas, sourceCanvas, (msg) => {
+        setState(prev => ({ ...prev, processingMessage: msg }));
+      });
+      setState(prev => ({
+        ...prev,
+        isProcessing: false,
+        processingMessage: '',
+        layers: prev.layers.map(l =>
+          l.id === prev.activeLayerId ? { ...l, canvas: result } : l
+        ),
+      }));
+    } catch (err: any) {
+      console.error('Face swap error:', err);
+      alert(err?.message || 'Face swap thất bại. Hãy thử ảnh có khuôn mặt rõ hơn.');
+      setState(prev => ({ ...prev, isProcessing: false, processingMessage: '' }));
+    }
+  }, [state.layers, state.activeLayerId]);
+
   const restorePhoto_ = useCallback(async () => {
     const activeLayer = state.layers.find(l => l.id === state.activeLayerId);
     if (!activeLayer) return;
@@ -357,6 +399,7 @@ export function useEditor() {
     upscale: upscale_,
     colorize: colorize_,
     restorePhoto: restorePhoto_,
+    faceSwap: faceSwap_,
     commitDraw: commitDraw_,
     getRenderedCanvas,
     getComposedCanvas,
