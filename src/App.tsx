@@ -6,8 +6,12 @@ import { Canvas } from './components/Canvas';
 import { RightPanel } from './components/RightPanel';
 import { MenuBar } from './components/MenuBar';
 import { BrushOptions } from './components/BrushOptions';
+import { HeartRateApp } from './components/heartrate/HeartRateApp';
+
+type Tab = 'editor' | 'heartrate';
 
 function App() {
+  const [activeTab, setActiveTab] = useState<Tab>('editor');
   const {
     state,
     loadImage,
@@ -162,6 +166,50 @@ function App() {
   const composedCanvas = getComposedCanvas();
   const showBrushOptions = state.activeTool === 'brush' || state.activeTool === 'eraser';
 
+  const tabBar = (
+    <div style={{
+      display: 'flex',
+      background: '#12121e',
+      borderBottom: '1px solid #1e1e30',
+      flexShrink: 0,
+    }}>
+      {([
+        { id: 'editor', label: '🖼️ Photo Editor' },
+        { id: 'heartrate', label: '❤️ Nhịp Tim' },
+      ] as { id: Tab; label: string }[]).map(tab => (
+        <button
+          key={tab.id}
+          onClick={() => setActiveTab(tab.id)}
+          style={{
+            flex: 1,
+            padding: '10px',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === tab.id ? '2px solid #f87171' : '2px solid transparent',
+            color: activeTab === tab.id ? '#f0f0ff' : '#555',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: activeTab === tab.id ? 700 : 400,
+            transition: 'color 0.2s',
+          }}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (activeTab === 'heartrate') {
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#09090f' }}>
+        {tabBar}
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <HeartRateApp />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#1e1e2e' }}
@@ -170,6 +218,9 @@ function App() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Tab bar */}
+      {tabBar}
+
       {/* Menu bar */}
       <MenuBar
         hasImage={!!state.image}
