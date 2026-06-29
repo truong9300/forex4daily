@@ -97,6 +97,16 @@ export function MenuBar({ hasImage, onOpenFile, onExport, getRenderedCanvas }: M
       }}>
         <span style={{ fontSize: 16 }}>✦</span>
         AI Photo Editor
+        <span style={{
+          background: 'linear-gradient(135deg, #6c63ff, #a855f7)',
+          color: '#fff',
+          fontSize: 9,
+          padding: '1px 5px',
+          borderRadius: 3,
+          fontWeight: 700,
+          letterSpacing: 0.5,
+          marginLeft: 4,
+        }}>v2.0</span>
       </div>
 
       {/* Menu items */}
