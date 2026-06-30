@@ -1,8 +1,36 @@
 import { useState, useCallback, useRef } from 'react';
-import type { EditorState, Adjustments, Tool, Layer } from '../types/editor';
-import { imageToCanvas, applyAdjustments, applyFilter, applySharpness } from '../utils/imageProcessing';
+import type { EditorState, Adjustments, Tool, Layer, ShapeType, HistoryEntry } from '../types/editor';
+import { imageToCanvas, applyAdjustments, applyFilter, applySharpness, cloneCanvas } from '../utils/imageProcessing';
 import { removeBackgroundAI, autoEnhanceAI, denoiseAI, upscaleAI, colorizeAI, restorePhotoAI } from '../utils/aiProcessing';
 import { faceSwapAI } from '../utils/faceSwapProcessing';
+
+function snapshotLayers(layers: Layer[]): Layer[] {
+  return layers.map(l => ({ ...l, canvas: cloneCanvas(l.canvas) }));
+}
+
+// Builds the layers/history/activeLayerId fields for a setState updater after a
+// destructive edit, trimming any "future" redo entries past the current index.
+function withHistory(
+  prev: EditorState,
+  newLayers: Layer[],
+  label: string,
+  newActiveLayerId?: string
+): Pick<EditorState, 'layers' | 'activeLayerId' | 'history' | 'historyIndex'> {
+  const entry: HistoryEntry = {
+    id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    label,
+    timestamp: Date.now(),
+    layers: snapshotLayers(newLayers),
+    activeLayerId: newActiveLayerId ?? prev.activeLayerId,
+  };
+  const history = [...prev.history.slice(0, prev.historyIndex + 1), entry];
+  return {
+    layers: newLayers,
+    activeLayerId: newActiveLayerId ?? prev.activeLayerId,
+    history,
+    historyIndex: history.length - 1,
+  };
+}
 
 const defaultAdjustments: Adjustments = {
   brightness: 0,
@@ -35,6 +63,8 @@ const initialState: EditorState = {
   brushSize: 20,
   brushColor: '#ffffff',
   brushOpacity: 100,
+  shapeType: 'rectangle',
+  shapeFilled: false,
   history: [],
   historyIndex: -1,
   selectedFilter: null,
@@ -79,6 +109,13 @@ export function useEditor() {
         canvas,
         type: 'image',
       };
+      const initialEntry: HistoryEntry = {
+        id: `h-${Date.now()}`,
+        label: 'Open Image',
+        timestamp: Date.now(),
+        layers: snapshotLayers([layer]),
+        activeLayerId: layer.id,
+      };
       setState(prev => ({
         ...prev,
         image: img,
@@ -89,8 +126,8 @@ export function useEditor() {
         zoom: 1,
         panX: 0,
         panY: 0,
-        history: [],
-        historyIndex: -1,
+        history: [initialEntry],
+        historyIndex: 0,
       }));
       URL.revokeObjectURL(url);
     };
@@ -133,6 +170,14 @@ export function useEditor() {
     setState(prev => ({ ...prev, brushOpacity: opacity }));
   }, []);
 
+  const setShapeType = useCallback((shapeType: ShapeType) => {
+    setState(prev => ({ ...prev, shapeType }));
+  }, []);
+
+  const setShapeFilled = useCallback((filled: boolean) => {
+    setState(prev => ({ ...prev, shapeFilled: filled }));
+  }, []);
+
   const toggleLayerVisibility = useCallback((layerId: string) => {
     setState(prev => ({
       ...prev,
@@ -145,29 +190,78 @@ export function useEditor() {
   }, []);
 
   const addTextLayer = useCallback((text: string, x: number, y: number) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = state.layers[0]?.canvas.width || 800;
-    canvas.height = state.layers[0]?.canvas.height || 600;
-    const ctx = canvas.getContext('2d')!;
-    ctx.font = '48px Arial';
-    ctx.fillStyle = state.brushColor;
-    ctx.fillText(text, x, y);
-    const layer: Layer = {
-      id: `text-${Date.now()}`,
-      name: `Text: ${text.slice(0, 10)}`,
-      visible: true,
-      locked: false,
-      opacity: 100,
-      blendMode: 'normal',
-      canvas,
-      type: 'text',
-    };
-    setState(prev => ({
-      ...prev,
-      layers: [...prev.layers, layer],
-      activeLayerId: layer.id,
-    }));
-  }, [state.layers, state.brushColor]);
+    setState(prev => {
+      const base = prev.layers[0]?.canvas;
+      const canvas = document.createElement('canvas');
+      canvas.width = base?.width || 800;
+      canvas.height = base?.height || 600;
+      const ctx = canvas.getContext('2d')!;
+      const fontSize = Math.max(14, prev.brushSize * 2);
+      ctx.font = `${fontSize}px Arial`;
+      ctx.fillStyle = prev.brushColor;
+      ctx.textBaseline = 'top';
+      ctx.fillText(text, x, y);
+      const layer: Layer = {
+        id: `text-${Date.now()}`,
+        name: `Text: ${text.slice(0, 10)}`,
+        visible: true,
+        locked: false,
+        opacity: 100,
+        blendMode: 'normal',
+        canvas,
+        type: 'text',
+      };
+      const newLayers = [...prev.layers, layer];
+      return { ...prev, ...withHistory(prev, newLayers, 'Add Text', layer.id) };
+    });
+  }, []);
+
+  const cropImage = useCallback((x: number, y: number, w: number, h: number) => {
+    setState(prev => {
+      if (!prev.layers.length) return prev;
+      const newLayers = prev.layers.map(l => {
+        const out = document.createElement('canvas');
+        out.width = w;
+        out.height = h;
+        out.getContext('2d')!.drawImage(l.canvas, -x, -y);
+        return { ...l, canvas: out };
+      });
+      return {
+        ...prev,
+        panX: 0,
+        panY: 0,
+        ...withHistory(prev, newLayers, 'Crop'),
+      };
+    });
+  }, []);
+
+  const undo = useCallback(() => {
+    setState(prev => {
+      if (prev.historyIndex <= 0) return prev;
+      const idx = prev.historyIndex - 1;
+      const entry = prev.history[idx];
+      return {
+        ...prev,
+        layers: snapshotLayers(entry.layers),
+        activeLayerId: entry.activeLayerId,
+        historyIndex: idx,
+      };
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    setState(prev => {
+      if (prev.historyIndex >= prev.history.length - 1) return prev;
+      const idx = prev.historyIndex + 1;
+      const entry = prev.history[idx];
+      return {
+        ...prev,
+        layers: snapshotLayers(entry.layers),
+        activeLayerId: entry.activeLayerId,
+        historyIndex: idx,
+      };
+    });
+  }, []);
 
   const removeBackground_ = useCallback(async () => {
     const activeLayer = state.layers.find(l => l.id === state.activeLayerId);
@@ -181,9 +275,9 @@ export function useEditor() {
         ...prev,
         isProcessing: false,
         processingMessage: '',
-        layers: prev.layers.map(l =>
+        ...withHistory(prev, prev.layers.map(l =>
           l.id === prev.activeLayerId ? { ...l, canvas: result } : l
-        ),
+        ), 'Remove Background'),
       }));
     } catch {
       setState(prev => ({ ...prev, isProcessing: false, processingMessage: '' }));
@@ -231,9 +325,9 @@ export function useEditor() {
         ...prev,
         isProcessing: false,
         processingMessage: '',
-        layers: prev.layers.map(l =>
+        ...withHistory(prev, prev.layers.map(l =>
           l.id === prev.activeLayerId ? { ...l, canvas: result } : l
-        ),
+        ), 'Denoise'),
       }));
     } catch {
       setState(prev => ({ ...prev, isProcessing: false, processingMessage: '' }));
@@ -250,21 +344,21 @@ export function useEditor() {
         ...prev,
         isProcessing: false,
         processingMessage: '',
-        layers: prev.layers.map(l =>
+        ...withHistory(prev, prev.layers.map(l =>
           l.id === prev.activeLayerId ? { ...l, canvas: result } : l
-        ),
+        ), 'Upscale'),
       }));
     } catch {
       setState(prev => ({ ...prev, isProcessing: false, processingMessage: '' }));
     }
   }, [state.layers, state.activeLayerId]);
 
-  const commitDraw_ = useCallback((canvas: HTMLCanvasElement) => {
+  const commitDraw_ = useCallback((canvas: HTMLCanvasElement, label = 'Draw') => {
     setState(prev => ({
       ...prev,
-      layers: prev.layers.map(l =>
+      ...withHistory(prev, prev.layers.map(l =>
         l.id === prev.activeLayerId ? { ...l, canvas } : l
-      ),
+      ), label),
     }));
   }, []);
 
@@ -278,9 +372,9 @@ export function useEditor() {
         ...prev,
         isProcessing: false,
         processingMessage: '',
-        layers: prev.layers.map(l =>
+        ...withHistory(prev, prev.layers.map(l =>
           l.id === prev.activeLayerId ? { ...l, canvas: result } : l
-        ),
+        ), 'Colorize'),
       }));
     } catch {
       setState(prev => ({ ...prev, isProcessing: false, processingMessage: '' }));
@@ -300,9 +394,9 @@ export function useEditor() {
         ...prev,
         isProcessing: false,
         processingMessage: '',
-        layers: prev.layers.map(l =>
+        ...withHistory(prev, prev.layers.map(l =>
           l.id === prev.activeLayerId ? { ...l, canvas: result } : l
-        ),
+        ), 'Face Swap'),
       }));
     } catch (err: any) {
       console.error('Face swap error:', err);
@@ -323,9 +417,9 @@ export function useEditor() {
         ...prev,
         isProcessing: false,
         processingMessage: '',
-        layers: prev.layers.map(l =>
+        ...withHistory(prev, prev.layers.map(l =>
           l.id === prev.activeLayerId ? { ...l, canvas: result } : l
-        ),
+        ), 'Restore Photo'),
       }));
     } catch {
       setState(prev => ({ ...prev, isProcessing: false, processingMessage: '' }));
@@ -390,9 +484,14 @@ export function useEditor() {
     setBrushSize,
     setBrushColor,
     setBrushOpacity,
+    setShapeType,
+    setShapeFilled,
     toggleLayerVisibility,
     setActiveLayer,
-    addTextLayer,
+    addText: addTextLayer,
+    cropImage,
+    undo,
+    redo,
     removeBackground: removeBackground_,
     autoEnhance: autoEnhance_,
     denoise: denoise_,

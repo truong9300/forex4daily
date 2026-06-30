@@ -322,6 +322,14 @@ export function imageToCanvas(img: HTMLImageElement): HTMLCanvasElement {
   return canvas;
 }
 
+export function cloneCanvas(source: HTMLCanvasElement): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = source.width;
+  canvas.height = source.height;
+  canvas.getContext('2d')!.drawImage(source, 0, 0);
+  return canvas;
+}
+
 export function canvasToDataURL(canvas: HTMLCanvasElement, format = 'image/png'): string {
   return canvas.toDataURL(format, 0.95);
 }

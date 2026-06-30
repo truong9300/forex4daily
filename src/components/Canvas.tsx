@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import type { Tool } from '../types/editor';
+import type { Tool, ShapeType } from '../types/editor';
 
 interface CanvasProps {
   renderedCanvas: HTMLCanvasElement | null;
@@ -11,10 +11,97 @@ interface CanvasProps {
   brushSize: number;
   brushColor: string;
   brushOpacity: number;
+  shapeType: ShapeType;
+  shapeFilled: boolean;
   onZoomChange: (zoom: number) => void;
   onPanChange: (x: number, y: number) => void;
-  onDrawCommit?: (canvas: HTMLCanvasElement) => void;
+  onDrawCommit?: (canvas: HTMLCanvasElement, label?: string) => void;
   onCropComplete?: (x: number, y: number, w: number, h: number) => void;
+  onColorPick?: (color: string) => void;
+  onAddText?: (text: string, x: number, y: number) => void;
+}
+
+function drawShapePreview(
+  ctx: CanvasRenderingContext2D,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  type: ShapeType,
+  filled: boolean,
+  color: string,
+  lineWidth: number,
+  opacityPct: number
+) {
+  ctx.globalAlpha = opacityPct / 100;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const x = Math.min(from.x, to.x);
+  const y = Math.min(from.y, to.y);
+  const w = Math.abs(to.x - from.x);
+  const h = Math.abs(to.y - from.y);
+  ctx.beginPath();
+  if (type === 'rectangle') {
+    ctx.rect(x, y, w, h);
+  } else if (type === 'ellipse') {
+    ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+  } else {
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+  }
+  if (type === 'line') {
+    ctx.stroke();
+  } else if (filled) {
+    ctx.fill();
+  } else {
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function stampClone(
+  dest: HTMLCanvasElement,
+  sample: HTMLCanvasElement,
+  pos: { x: number; y: number },
+  offset: { x: number; y: number },
+  size: number,
+  opacityPct: number
+) {
+  const ctx = dest.getContext('2d')!;
+  const sampleX = pos.x - offset.x;
+  const sampleY = pos.y - offset.y;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, size / 2, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.globalAlpha = opacityPct / 100;
+  ctx.drawImage(sample, sampleX - size / 2, sampleY - size / 2, size, size, pos.x - size / 2, pos.y - size / 2, size, size);
+  ctx.restore();
+}
+
+function stampHeal(
+  dest: HTMLCanvasElement,
+  sample: HTMLCanvasElement,
+  pos: { x: number; y: number },
+  offset: { x: number; y: number },
+  size: number,
+  opacityPct: number
+) {
+  const ctx = dest.getContext('2d')!;
+  const sampleX = pos.x - offset.x;
+  const sampleY = pos.y - offset.y;
+  const steps = 4;
+  for (let i = steps; i >= 1; i--) {
+    const r = (size / 2) * (i / steps);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalAlpha = (opacityPct / 100) * (1 / steps) * 1.5;
+    ctx.drawImage(sample, sampleX - size / 2, sampleY - size / 2, size, size, pos.x - size / 2, pos.y - size / 2, size, size);
+    ctx.restore();
+  }
 }
 
 export function Canvas({
@@ -27,10 +114,14 @@ export function Canvas({
   brushSize,
   brushColor,
   brushOpacity,
+  shapeType,
+  shapeFilled,
   onZoomChange,
   onPanChange,
   onDrawCommit,
   onCropComplete,
+  onColorPick,
+  onAddText,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -41,6 +132,23 @@ export function Canvas({
   const cropStart = useRef({ x: 0, y: 0 });
   const [cropRect, setCropRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [isCropping, setIsCropping] = useState(false);
+  const shapeStart = useRef({ x: 0, y: 0 });
+  const isDrawingShape = useRef(false);
+  const shapeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cloneSource = useRef<{ x: number; y: number } | null>(null);
+  const cloneOffset = useRef<{ x: number; y: number } | null>(null);
+  const cloneSampleCanvas = useRef<HTMLCanvasElement | null>(null);
+  const [textInput, setTextInput] = useState<{ x: number; y: number; screenX: number; screenY: number; value: string } | null>(null);
+
+  // Reset tool-specific transient state when switching tools
+  useEffect(() => {
+    cloneSource.current = null;
+    cloneOffset.current = null;
+    cloneSampleCanvas.current = null;
+    isDrawingShape.current = false;
+    shapeCanvasRef.current = null;
+    if (activeTool !== 'text') setTextInput(null);
+  }, [activeTool]);
 
   // brushOverlay: transparent canvas with strokes only (drawn on top of renderedCanvas)
   // replaceImage: full replacement canvas (for eraser preview)
@@ -181,6 +289,65 @@ export function Canvas({
       return;
     }
 
+    if (activeTool === 'eyedropper') {
+      const src = baseCanvas || renderedCanvas;
+      const x = Math.round(pos.x);
+      const y = Math.round(pos.y);
+      if (x < 0 || y < 0 || x >= src.width || y >= src.height) return;
+      const ctx = src.getContext('2d')!;
+      const [r, g, b] = ctx.getImageData(x, y, 1, 1).data;
+      const hex = `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+      onColorPick?.(hex);
+      return;
+    }
+
+    if (activeTool === 'text') {
+      e.preventDefault();
+      const rect = containerRef.current!.getBoundingClientRect();
+      if (textInput && textInput.value.trim()) {
+        onAddText?.(textInput.value, textInput.x, textInput.y);
+      }
+      setTextInput({ x: pos.x, y: pos.y, screenX: e.clientX - rect.left, screenY: e.clientY - rect.top, value: '' });
+      return;
+    }
+
+    if (activeTool === 'shape') {
+      isDrawingShape.current = true;
+      shapeStart.current = pos;
+      const src = baseCanvas || renderedCanvas;
+      const sc = document.createElement('canvas');
+      sc.width = src.width;
+      sc.height = src.height;
+      shapeCanvasRef.current = sc;
+      return;
+    }
+
+    if (activeTool === 'clone' || activeTool === 'heal') {
+      if (e.altKey) {
+        cloneSource.current = pos;
+        return;
+      }
+      if (!cloneSource.current) return;
+      cloneOffset.current = { x: pos.x - cloneSource.current.x, y: pos.y - cloneSource.current.y };
+      const src = baseCanvas || renderedCanvas;
+      const sample = document.createElement('canvas');
+      sample.width = src.width;
+      sample.height = src.height;
+      sample.getContext('2d')!.drawImage(src, 0, 0);
+      cloneSampleCanvas.current = sample;
+      const dc = document.createElement('canvas');
+      dc.width = src.width;
+      dc.height = src.height;
+      dc.getContext('2d')!.drawImage(src, 0, 0);
+      drawingCanvasRef.current = dc;
+      isPainting.current = true;
+      lastPos.current = pos;
+      const stamp = activeTool === 'clone' ? stampClone : stampHeal;
+      stamp(dc, sample, pos, cloneOffset.current, brushSize, brushOpacity);
+      renderDisplay({ replaceImage: dc });
+      return;
+    }
+
     if (activeTool === 'brush' || activeTool === 'eraser') {
       isPainting.current = true;
       lastPos.current = pos;
@@ -206,7 +373,7 @@ export function Canvas({
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTool, renderedCanvas, baseCanvas, getImageCoords, zoom, onZoomChange, brushSize, brushColor, brushOpacity, renderDisplay]);
+  }, [activeTool, renderedCanvas, baseCanvas, getImageCoords, zoom, onZoomChange, brushSize, brushColor, brushOpacity, renderDisplay, onColorPick, onAddText, textInput]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (isPanning.current) {
@@ -228,6 +395,29 @@ export function Canvas({
       return;
     }
 
+    if (activeTool === 'shape' && isDrawingShape.current && shapeCanvasRef.current) {
+      const sc = shapeCanvasRef.current;
+      const ctx = sc.getContext('2d')!;
+      ctx.clearRect(0, 0, sc.width, sc.height);
+      drawShapePreview(ctx, shapeStart.current, pos, shapeType, shapeFilled, brushColor, brushSize, brushOpacity);
+      renderDisplay({ brushOverlay: sc });
+      return;
+    }
+
+    if (
+      isPainting.current &&
+      drawingCanvasRef.current &&
+      (activeTool === 'clone' || activeTool === 'heal') &&
+      cloneOffset.current &&
+      cloneSampleCanvas.current
+    ) {
+      const stamp = activeTool === 'clone' ? stampClone : stampHeal;
+      stamp(drawingCanvasRef.current, cloneSampleCanvas.current, pos, cloneOffset.current, brushSize, brushOpacity);
+      lastPos.current = pos;
+      renderDisplay({ replaceImage: drawingCanvasRef.current });
+      return;
+    }
+
     if (isPainting.current && drawingCanvasRef.current && (activeTool === 'brush' || activeTool === 'eraser')) {
       paintLine(drawingCanvasRef.current, lastPos.current, pos, activeTool);
       lastPos.current = pos;
@@ -239,7 +429,7 @@ export function Canvas({
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTool, isCropping, panX, panY, getImageCoords, onPanChange, brushSize, brushColor, brushOpacity, renderDisplay]);
+  }, [activeTool, isCropping, panX, panY, getImageCoords, onPanChange, brushSize, brushColor, brushOpacity, renderDisplay, shapeType, shapeFilled]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent) => {
     isPanning.current = false;
@@ -256,13 +446,38 @@ export function Canvas({
       }
     }
 
+    if (activeTool === 'shape' && isDrawingShape.current) {
+      isDrawingShape.current = false;
+      const sc = shapeCanvasRef.current;
+      shapeCanvasRef.current = null;
+      if (sc && (baseCanvas || renderedCanvas)) {
+        const src = baseCanvas || renderedCanvas!;
+        const merged = document.createElement('canvas');
+        merged.width = src.width;
+        merged.height = src.height;
+        const ctx = merged.getContext('2d')!;
+        ctx.drawImage(src, 0, 0);
+        ctx.drawImage(sc, 0, 0);
+        onDrawCommit?.(merged, 'Shape');
+      } else {
+        renderDisplay();
+      }
+    }
+
     if (isPainting.current && drawingCanvasRef.current) {
       isPainting.current = false;
       const dc = drawingCanvasRef.current;
       drawingCanvasRef.current = null;
+      cloneOffset.current = null;
+      cloneSampleCanvas.current = null;
+
+      const label = activeTool === 'eraser' ? 'Eraser'
+        : activeTool === 'clone' ? 'Clone Stamp'
+        : activeTool === 'heal' ? 'Healing Brush'
+        : 'Brush';
 
       // For brush: merge strokes onto base canvas and commit
-      // For eraser: dc already contains the erased result
+      // For eraser/clone/heal: dc already contains the full replacement result
       if (activeTool === 'brush' && (baseCanvas || renderedCanvas)) {
         const src = baseCanvas || renderedCanvas!;
         const merged = document.createElement('canvas');
@@ -271,14 +486,14 @@ export function Canvas({
         const ctx = merged.getContext('2d')!;
         ctx.drawImage(src, 0, 0);
         ctx.drawImage(dc, 0, 0);
-        onDrawCommit?.(merged);
+        onDrawCommit?.(merged, label);
       } else {
-        onDrawCommit?.(dc);
+        onDrawCommit?.(dc, label);
       }
     }
 
     void e;
-  }, [activeTool, isCropping, cropRect, onCropComplete, baseCanvas, renderedCanvas, onDrawCommit]);
+  }, [activeTool, isCropping, cropRect, onCropComplete, baseCanvas, renderedCanvas, onDrawCommit, renderDisplay]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -295,6 +510,8 @@ export function Canvas({
       case 'eraser': return 'cell';
       case 'eyedropper': return 'crosshair';
       case 'text': return 'text';
+      case 'shape': return 'crosshair';
+      case 'clone': case 'heal': return 'copy';
       default: return 'default';
     }
   };
@@ -315,6 +532,43 @@ export function Canvas({
       onContextMenu={e => e.preventDefault()}
     >
       <canvas ref={displayCanvasRef} style={{ position: 'absolute', top: 0, left: 0 }} />
+
+      {textInput && (
+        <input
+          autoFocus
+          value={textInput.value}
+          onChange={e => setTextInput({ ...textInput, value: e.target.value })}
+          onMouseDown={e => e.stopPropagation()}
+          onKeyDown={e => {
+            e.stopPropagation();
+            if (e.key === 'Enter') {
+              if (textInput.value.trim()) onAddText?.(textInput.value, textInput.x, textInput.y);
+              setTextInput(null);
+            } else if (e.key === 'Escape') {
+              setTextInput(null);
+            }
+          }}
+          onBlur={() => {
+            if (textInput.value.trim()) onAddText?.(textInput.value, textInput.x, textInput.y);
+            setTextInput(null);
+          }}
+          placeholder="Type text…"
+          style={{
+            position: 'absolute',
+            left: textInput.screenX,
+            top: textInput.screenY - 22,
+            background: 'rgba(26,26,46,0.92)',
+            border: '1px solid #6c63ff',
+            borderRadius: 4,
+            color: brushColor,
+            fontSize: Math.max(14, Math.min(48, brushSize)),
+            padding: '4px 8px',
+            outline: 'none',
+            zIndex: 10,
+            minWidth: 140,
+          }}
+        />
+      )}
 
       {!renderedCanvas && (
         <div style={{

@@ -20,8 +20,14 @@ function App() {
     setBrushSize,
     setBrushColor,
     setBrushOpacity,
+    setShapeType,
+    setShapeFilled,
     toggleLayerVisibility,
     setActiveLayer,
+    addText,
+    cropImage,
+    undo,
+    redo,
     removeBackground,
     autoEnhance,
     denoise,
@@ -41,6 +47,16 @@ function App() {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).tagName === 'INPUT') return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        redo();
+        return;
+      }
       switch (e.key.toLowerCase()) {
         case 'v': setTool('select'); break;
         case 'c': setTool('crop'); break;
@@ -50,6 +66,9 @@ function App() {
         case 'z': setTool('zoom'); break;
         case 'h': setTool('pan'); break;
         case 'i': setTool('eyedropper'); break;
+        case 'u': setTool('shape'); break;
+        case 'j': setTool('heal'); break;
+        case 's': setTool('clone'); break;
         case '+': case '=': setZoom(state.zoom * 1.2); break;
         case '-': setZoom(state.zoom / 1.2); break;
         case '0': setZoom(1); break;
@@ -57,7 +76,7 @@ function App() {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [setTool, setZoom, state.zoom]);
+  }, [setTool, setZoom, state.zoom, undo, redo]);
 
   // Drag & drop
   const handleDragEnter = (e: React.DragEvent) => {
@@ -113,8 +132,7 @@ function App() {
     }
     ctx.drawImage(layer.canvas, 0, 0);
     ctx.restore();
-    layer.canvas.getContext('2d')!.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
-    layer.canvas.getContext('2d')!.drawImage(out, 0, 0);
+    commitDraw(out, direction === 'h' ? 'Flip Horizontal' : 'Flip Vertical');
   };
 
   const handleRotate = (degrees: number) => {
@@ -132,11 +150,7 @@ function App() {
     ctx.translate(nw / 2, nh / 2);
     ctx.rotate(rad);
     ctx.drawImage(layer.canvas, -ow / 2, -oh / 2);
-    const tmpCanvas = document.createElement('canvas');
-    tmpCanvas.width = out.width;
-    tmpCanvas.height = out.height;
-    tmpCanvas.getContext('2d')!.drawImage(out, 0, 0);
-    Object.assign(layer, { canvas: tmpCanvas });
+    commitDraw(out, degrees > 0 ? 'Rotate CW' : 'Rotate CCW');
   };
 
   const handleAutoEnhance = () => {
@@ -165,7 +179,9 @@ function App() {
 
   const renderedCanvas = getRenderedCanvas();
   const composedCanvas = getComposedCanvas();
-  const showBrushOptions = state.activeTool === 'brush' || state.activeTool === 'eraser';
+  const showBrushOptions = ['brush', 'eraser', 'shape', 'clone', 'heal', 'text'].includes(state.activeTool);
+  const canUndo = state.historyIndex > 0;
+  const canRedo = state.historyIndex < state.history.length - 1;
 
   return (
     <div
@@ -181,17 +197,26 @@ function App() {
         onOpenFile={loadImage}
         onExport={handleMenuAction}
         getRenderedCanvas={getRenderedCanvas}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
 
       {/* Brush options bar */}
       {showBrushOptions && (
         <BrushOptions
+          activeTool={state.activeTool}
           brushSize={state.brushSize}
           brushColor={state.brushColor}
           brushOpacity={state.brushOpacity}
+          shapeType={state.shapeType}
+          shapeFilled={state.shapeFilled}
           onSizeChange={setBrushSize}
           onColorChange={setBrushColor}
           onOpacityChange={setBrushOpacity}
+          onShapeTypeChange={setShapeType}
+          onShapeFilledChange={setShapeFilled}
         />
       )}
 
@@ -201,10 +226,10 @@ function App() {
         <Toolbar
           activeTool={state.activeTool}
           onToolChange={setTool}
-          onUndo={() => {}}
-          onRedo={() => {}}
-          canUndo={false}
-          canRedo={false}
+          onUndo={undo}
+          onRedo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
         />
 
         {/* Canvas */}
@@ -218,9 +243,14 @@ function App() {
           brushSize={state.brushSize}
           brushColor={state.brushColor}
           brushOpacity={state.brushOpacity}
+          shapeType={state.shapeType}
+          shapeFilled={state.shapeFilled}
           onZoomChange={setZoom}
           onPanChange={setPan}
           onDrawCommit={commitDraw}
+          onCropComplete={cropImage}
+          onColorPick={setBrushColor}
+          onAddText={addText}
         />
 
         {/* Right panel */}

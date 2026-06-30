@@ -13,9 +13,13 @@ interface MenuBarProps {
   onOpenFile: (file: File) => void;
   onExport: (format: string) => void;
   getRenderedCanvas: () => HTMLCanvasElement | null;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
-export function MenuBar({ hasImage, onOpenFile, onExport, getRenderedCanvas }: MenuBarProps) {
+export function MenuBar({ hasImage, onOpenFile, onExport, getRenderedCanvas, onUndo, onRedo, canUndo, canRedo }: MenuBarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
@@ -47,8 +51,8 @@ export function MenuBar({ hasImage, onOpenFile, onExport, getRenderedCanvas }: M
     {
       label: 'Edit',
       items: [
-        { label: 'Undo', action: () => {}, shortcut: 'Ctrl+Z' },
-        { label: 'Redo', action: () => {}, shortcut: 'Ctrl+Y' },
+        { label: 'Undo', action: onUndo, shortcut: 'Ctrl+Z', disabled: !canUndo },
+        { label: 'Redo', action: onRedo, shortcut: 'Ctrl+Y', disabled: !canRedo },
         { label: 'divider' },
         { label: 'Reset All Adjustments', action: () => onExport('reset') },
       ],

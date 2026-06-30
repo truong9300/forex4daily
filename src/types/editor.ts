@@ -66,8 +66,11 @@ export interface HistoryEntry {
   id: string;
   label: string;
   timestamp: number;
-  imageData: ImageData;
+  layers: Layer[];
+  activeLayerId: string | null;
 }
+
+export type ShapeType = 'rectangle' | 'ellipse' | 'line';
 
 export interface EditorState {
   image: HTMLImageElement | null;
@@ -81,6 +84,8 @@ export interface EditorState {
   brushSize: number;
   brushColor: string;
   brushOpacity: number;
+  shapeType: ShapeType;
+  shapeFilled: boolean;
   history: HistoryEntry[];
   historyIndex: number;
   selectedFilter: string | null;
